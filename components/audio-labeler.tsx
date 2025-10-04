@@ -411,38 +411,6 @@ export default function AudioLabeler() {
                   </Button>
                 )}
               </div>
-
-              <div className="ml-auto flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Label className="text-slate-600 text-xs">Zoom</Label>
-                  <Input
-                    type="range"
-                    min={50}
-                    max={400}
-                    step={10}
-                    value={zoomPxPerSec}
-                    onChange={(e) => zoom(Number(e.target.value))}
-                    className="w-32"
-                  />
-                  <span className="text-xs text-slate-500 w-8">{zoomPxPerSec}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-slate-600 text-xs">Speed</Label>
-                  <Input
-                    type="number"
-                    min={0.5}
-                    max={2}
-                    step={0.1}
-                    value={rate}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setRate(v);
-                      wsRef.current?.setPlaybackRate(v);
-                    }}
-                    className="w-16"
-                  />
-                </div>
-              </div>
             </div>
           </div>
 
