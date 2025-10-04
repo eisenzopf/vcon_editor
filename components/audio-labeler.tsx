@@ -58,9 +58,26 @@ export default function AudioLabeler() {
     target: "left" | "right" | "both";
   }>({ type: "topic", value: "", target: "left" });
 
+  // Settings modal state
+  const [showSettings, setShowSettings] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Label modal state
+  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [labelModalRegionId, setLabelModalRegionId] = useState<string | null>(null);
+  const [labelModalData, setLabelModalData] = useState<{
+    type: string;
+    value: string;
+    target: "left" | "right" | "both";
+  }>({ type: "sentiment", value: "", target: "left" });
+
   // Init WaveSurfer
   useEffect(() => {
     if (!containerRef.current || !timelineRef.current) return;
+
+    const regions = RegionsPlugin.create({
+      dragSelection: true,
+    });
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
@@ -74,9 +91,7 @@ export default function AudioLabeler() {
       barWidth: 3,
       barRadius: 2,
       plugins: [
-        RegionsPlugin.create({
-          dragSelection: true,
-        }),
+        regions,
         TimelinePlugin.create({
           container: timelineRef.current,
           height: 20,
@@ -91,8 +106,6 @@ export default function AudioLabeler() {
     ws.on("play", () => setPlaying(true));
     ws.on("pause", () => setPlaying(false));
 
-    const regions = ws.registerPlugin(RegionsPlugin.create());
-
     regions.on("region-created", (region: any) => {
       setActiveRegionId(region.id);
     });
@@ -103,8 +116,36 @@ export default function AudioLabeler() {
 
     regions.on("region-clicked", (region: any, e: MouseEvent) => {
       e.stopPropagation();
+      e.preventDefault();
+
       setActiveRegionId(region.id);
-      region.play();
+      setLabelModalRegionId(region.id);
+
+      // Check if there are existing annotations for this region
+      setAnns(currentAnns => {
+        const existingAnns = currentAnns.filter(a => a.regionId === region.id);
+
+        if (existingAnns.length > 0) {
+          // Load first annotation into modal
+          const ann = existingAnns[0];
+          setLabelModalData({
+            type: ann.type,
+            value: ann.value,
+            target: ann.channel === 0 ? "left" : ann.channel === 1 ? "right" : "both",
+          });
+        } else {
+          // Reset to defaults for new annotation
+          setLabelModalData({
+            type: "sentiment",
+            value: "",
+            target: "left",
+          });
+        }
+
+        return currentAnns;
+      });
+
+      setShowLabelModal(true);
     });
 
     wsRef.current = ws;
@@ -158,8 +199,66 @@ export default function AudioLabeler() {
     const region = regionsRef.current
       .getRegions()
       .find((r: any) => r.id === activeRegionId);
-    if (region) region.remove();
+    if (region) {
+      region.remove();
+      // Also remove all annotations for this region
+      setAnns(prev => prev.filter(a => a.regionId !== activeRegionId));
+    }
     setActiveRegionId(null);
+  };
+
+  const deleteRegion = (regionId: string) => {
+    if (!regionsRef.current) return;
+    const region = regionsRef.current.getRegions().find((r: any) => r.id === regionId);
+    if (region) {
+      region.remove();
+      // Also remove all annotations for this region
+      setAnns(prev => prev.filter(a => a.regionId !== regionId));
+    }
+  };
+
+  const saveLabelModal = () => {
+    if (!labelModalRegionId || !regionsRef.current) return;
+
+    const region = regionsRef.current.getRegions().find((r: any) => r.id === labelModalRegionId);
+    if (!region) return;
+
+    const start = Number(region.start.toFixed(3));
+    const end = Number(region.end.toFixed(3));
+
+    // Remove existing annotations for this region
+    setAnns(prev => prev.filter(a => a.regionId !== labelModalRegionId));
+
+    // Add new annotation(s)
+    const push = (channel: number | undefined) => {
+      const targetParty =
+        channel === 0 ? partyL.id : channel === 1 ? partyR.id : undefined;
+      setAnns((prev) => [
+        ...prev,
+        {
+          id: uuidv4(),
+          type: labelModalData.type || "label",
+          start,
+          end,
+          value: labelModalData.value || "label",
+          target: targetParty,
+          channel,
+          regionId: labelModalRegionId,
+        },
+      ]);
+    };
+
+    if (labelModalData.target === "both") {
+      push(0);
+      push(1);
+    } else if (labelModalData.target === "left") {
+      push(0);
+    } else {
+      push(1);
+    }
+
+    setShowLabelModal(false);
+    setLabelModalRegionId(null);
   };
 
   const commitLabelToActiveRegion = () => {
@@ -266,87 +365,6 @@ export default function AudioLabeler() {
 
         {/* Main Content */}
         <div className="space-y-6">
-          {/* File Upload & Party Configuration */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Setup
-            </h2>
-            <div className="grid md:grid-cols-3 gap-6">
-              <div>
-                <Label className="text-slate-700 mb-2 block">
-                  Audio File (Stereo)
-                </Label>
-                <Input
-                  type="file"
-                  accept="audio/*"
-                  onChange={(e: any) => setAudioFile(e.target.files?.[0] || null)}
-                  className="cursor-pointer"
-                />
-                {audioFile && (
-                  <p className="text-sm text-slate-500 mt-2">
-                    {audioFile.name}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label className="text-slate-700 mb-2 block">
-                  Left Channel (0)
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Name"
-                    value={partyL.name || ""}
-                    onChange={(e) =>
-                      setPartyL({ ...partyL, name: e.target.value })
-                    }
-                  />
-                  <select
-                    value={partyL.role}
-                    onChange={(e) =>
-                      setPartyL({
-                        ...partyL,
-                        role: e.target.value as any,
-                      })
-                    }
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="agent">Agent</option>
-                    <option value="customer">Customer</option>
-                    <option value="unknown">Unknown</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <Label className="text-slate-700 mb-2 block">
-                  Right Channel (1)
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Name"
-                    value={partyR.name || ""}
-                    onChange={(e) =>
-                      setPartyR({ ...partyR, name: e.target.value })
-                    }
-                  />
-                  <select
-                    value={partyR.role}
-                    onChange={(e) =>
-                      setPartyR({
-                        ...partyR,
-                        role: e.target.value as any,
-                      })
-                    }
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="agent">Agent</option>
-                    <option value="customer">Customer</option>
-                    <option value="unknown">Unknown</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Waveform Player */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
@@ -362,7 +380,8 @@ export default function AudioLabeler() {
               <div className="flex gap-2">
                 <Button
                   onClick={togglePlay}
-                  className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600"
+                  disabled={!audioFile}
+                  className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {playing ? (
                     <>
@@ -382,7 +401,8 @@ export default function AudioLabeler() {
                 </Button>
                 <Button
                   onClick={() => wsRef.current?.stop()}
-                  className="hover:bg-slate-100"
+                  disabled={!audioFile}
+                  className="hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M5 4h10v12H5V4z" />
@@ -391,7 +411,8 @@ export default function AudioLabeler() {
                 </Button>
                 <Button
                   onClick={addRegionFromSelection}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600"
+                  disabled={!audioFile}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -411,84 +432,44 @@ export default function AudioLabeler() {
                   </Button>
                 )}
               </div>
+
+              <div className="ml-auto flex gap-2">
+                <Button
+                  onClick={() => setShowSettings(true)}
+                  className="hover:bg-slate-100"
+                  title="Settings"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </Button>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-slate-700 text-white hover:bg-slate-800 border-slate-700"
+                >
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  Open Audio
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  onChange={(e: any) => setAudioFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Annotation Panel */}
+          {/* Labels List */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Annotation
-            </h2>
-            <div className="grid md:grid-cols-5 gap-4 mb-6">
-              <div className="md:col-span-2">
-                <Label className="text-slate-700 mb-2 block">Type</Label>
-                <Input
-                  placeholder="e.g., sentiment, intent, topic"
-                  value={draft.type}
-                  onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-                />
-              </div>
-              <div className="md:col-span-2">
-                <Label className="text-slate-700 mb-2 block">Value</Label>
-                <Input
-                  placeholder="e.g., positive, cancel_account"
-                  value={draft.value}
-                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label className="text-slate-700 mb-2 block">Channel</Label>
-                <div className="flex gap-2">
-                  <button
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      draft.target === "left"
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                    onClick={() => setDraft({ ...draft, target: "left" })}
-                  >
-                    L
-                  </button>
-                  <button
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      draft.target === "right"
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                    onClick={() => setDraft({ ...draft, target: "right" })}
-                  >
-                    R
-                  </button>
-                  <button
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      draft.target === "both"
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                    onClick={() => setDraft({ ...draft, target: "both" })}
-                  >
-                    Both
-                  </button>
-                </div>
-              </div>
-            </div>
-            <Button
-              onClick={commitLabelToActiveRegion}
-              disabled={!activeRegionId || !draft.value}
-              className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-              </svg>
-              Add Label to Region
-            </Button>
-
-            {/* Annotations List */}
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-slate-900">
-                  Labels ({anns.length})
-                </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Labels ({anns.length})
+              </h2>
                 {anns.length > 0 && (
                   <Button
                     onClick={clearAll}
@@ -498,8 +479,8 @@ export default function AudioLabeler() {
                     Clear All
                   </Button>
                 )}
-              </div>
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+            </div>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
                 {anns.length === 0 ? (
                   <div className="p-8 text-center text-slate-400">
                     <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -580,7 +561,6 @@ export default function AudioLabeler() {
                     </table>
                   </div>
                 )}
-              </div>
             </div>
           </div>
 
@@ -599,6 +579,168 @@ export default function AudioLabeler() {
           </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">
+              Channel Settings
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <Label className="text-slate-700 mb-2 block">Left Channel (0)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Name"
+                    value={partyL.name || ""}
+                    onChange={(e) => setPartyL({ ...partyL, name: e.target.value })}
+                  />
+                  <select
+                    value={partyL.role}
+                    onChange={(e) => setPartyL({ ...partyL, role: e.target.value as any })}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="agent">Agent</option>
+                    <option value="customer">Customer</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-slate-700 mb-2 block">Right Channel (1)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Name"
+                    value={partyR.name || ""}
+                    onChange={(e) => setPartyR({ ...partyR, name: e.target.value })}
+                  />
+                  <select
+                    value={partyR.role}
+                    onChange={(e) => setPartyR({ ...partyR, role: e.target.value as any })}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="agent">Agent</option>
+                    <option value="customer">Customer</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button
+                onClick={() => setShowSettings(false)}
+                className="flex-1 bg-blue-600 text-white hover:bg-blue-700 border-blue-600"
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Label Modal */}
+      {showLabelModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">
+              Label Region
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <Label className="text-slate-700 mb-2 block">Type</Label>
+                <Input
+                  placeholder="e.g., sentiment, intent, topic, emotion"
+                  value={labelModalData.type}
+                  onChange={(e) => setLabelModalData({ ...labelModalData, type: e.target.value })}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-700 mb-2 block">Value</Label>
+                <Input
+                  placeholder="e.g., positive, cancel_account, pricing"
+                  value={labelModalData.value}
+                  onChange={(e) => setLabelModalData({ ...labelModalData, value: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-700 mb-2 block">Channel</Label>
+                <div className="flex gap-2">
+                  <button
+                    className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      labelModalData.target === "left"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                    onClick={() => setLabelModalData({ ...labelModalData, target: "left" })}
+                  >
+                    Left ({partyL.name})
+                  </button>
+                  <button
+                    className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      labelModalData.target === "right"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                    onClick={() => setLabelModalData({ ...labelModalData, target: "right" })}
+                  >
+                    Right ({partyR.name})
+                  </button>
+                  <button
+                    className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      labelModalData.target === "both"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                    onClick={() => setLabelModalData({ ...labelModalData, target: "both" })}
+                  >
+                    Both
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button
+                onClick={() => {
+                  setShowLabelModal(false);
+                  setLabelModalRegionId(null);
+                }}
+                className="flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200"
+              >
+                Cancel
+              </Button>
+              {labelModalRegionId && (
+                <Button
+                  onClick={() => {
+                    deleteRegion(labelModalRegionId);
+                    setShowLabelModal(false);
+                    setLabelModalRegionId(null);
+                  }}
+                  variant="destructive"
+                  className="flex-1"
+                >
+                  Delete Region
+                </Button>
+              )}
+              <Button
+                onClick={saveLabelModal}
+                disabled={!labelModalData.value}
+                className="flex-1 bg-blue-600 text-white hover:bg-blue-700 border-blue-600 disabled:opacity-50"
+              >
+                Save Label
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
