@@ -112,6 +112,20 @@ export default function AudioLabeler() {
 
     regions.on("region-updated", (region: any) => {
       setActiveRegionId(region.id);
+
+      // Update annotation times when region is moved/resized
+      setAnns(currentAnns => {
+        return currentAnns.map(ann => {
+          if (ann.regionId === region.id) {
+            return {
+              ...ann,
+              start: Number(region.start.toFixed(3)),
+              end: Number(region.end.toFixed(3)),
+            };
+          }
+          return ann;
+        });
+      });
     });
 
     regions.on("region-clicked", (region: any, e: MouseEvent) => {
