@@ -30,8 +30,10 @@ type Ann = {
 
 export default function AudioLabeler() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const minimapRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
+  const minimapWsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<any>(null);
 
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -39,6 +41,7 @@ export default function AudioLabeler() {
   const [rate, setRate] = useState<number>(1);
   const [zoomPxPerSec, setZoomPxPerSec] = useState<number>(100);
   const [playing, setPlaying] = useState<boolean>(false);
+  const [viewportProgress, setViewportProgress] = useState<number>(0);
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -74,7 +77,7 @@ export default function AudioLabeler() {
 
   // Init WaveSurfer
   useEffect(() => {
-    if (!containerRef.current || !timelineRef.current) return;
+    if (!containerRef.current || !timelineRef.current || !minimapRef.current) return;
 
     const regions = RegionsPlugin.create();
 
@@ -101,12 +104,43 @@ export default function AudioLabeler() {
       ],
     });
 
+    // Create minimap waveform
+    const minimapWs = WaveSurfer.create({
+      container: minimapRef.current,
+      waveColor: "#cbd5e1",
+      progressColor: "#94a3b8",
+      cursorColor: "transparent",
+      height: 60,
+      minPxPerSec: 10, // Much lower zoom for overview
+      splitChannels: [
+        { overlay: false },
+        { overlay: false }
+      ],
+      barGap: 1,
+      barWidth: 2,
+      barRadius: 1,
+      interact: false, // Disable normal interactions
+    });
+
     ws.on("ready", () => {
       setDuration(ws.getDuration());
     });
 
     ws.on("play", () => setPlaying(true));
     ws.on("pause", () => setPlaying(false));
+
+    // Update viewport indicator when scrolling/seeking in main view
+    ws.on("scroll", () => {
+      updateViewportIndicator(ws, minimapWs);
+    });
+
+    ws.on("timeupdate", () => {
+      updateViewportIndicator(ws, minimapWs);
+    });
+
+    ws.on("zoom", () => {
+      updateViewportIndicator(ws, minimapWs);
+    });
 
     regions.on("region-created", (region: any) => {
       setActiveRegionId(region.id);
@@ -165,25 +199,64 @@ export default function AudioLabeler() {
     });
 
     wsRef.current = ws;
+    minimapWsRef.current = minimapWs;
     regionsRef.current = regions;
 
     return () => {
       ws.destroy();
+      minimapWs.destroy();
       wsRef.current = null;
+      minimapWsRef.current = null;
       regionsRef.current = null;
     };
   }, [zoomPxPerSec]);
 
+  // Helper function to update viewport indicator position
+  const updateViewportIndicator = (ws: WaveSurfer, minimapWs: WaveSurfer) => {
+    if (!ws || !minimapWs) return;
+
+    const duration = ws.getDuration();
+    if (!duration) return;
+
+    const currentTime = ws.getCurrentTime();
+    const progress = currentTime / duration;
+    setViewportProgress(progress);
+  };
+
   // Reload audio when file chosen
   useEffect(() => {
     const ws = wsRef.current;
+    const minimapWs = minimapWsRef.current;
     if (!ws || !audioFile) return;
 
     const url = URL.createObjectURL(audioFile);
     ws.load(url);
 
+    // Load same audio into minimap
+    if (minimapWs) {
+      minimapWs.load(url);
+    }
+
     return () => URL.revokeObjectURL(url);
   }, [audioFile]);
+
+  // Handle minimap clicks to jump to position
+  const handleMinimapClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const minimapWs = minimapWsRef.current;
+    const ws = wsRef.current;
+    if (!minimapWs || !ws) return;
+
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - bounds.left;
+    const width = bounds.width;
+    const progress = x / width;
+
+    const duration = ws.getDuration();
+    const seekTime = progress * duration;
+
+    ws.seekTo(progress);
+    setViewportProgress(progress);
+  };
 
   const togglePlay = () => {
     wsRef.current?.playPause();
@@ -386,6 +459,23 @@ export default function AudioLabeler() {
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
               Audio Waveform
             </h2>
+
+            {/* Minimap Overview */}
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 mb-4 relative">
+              <div className="text-xs text-slate-500 mb-2 font-medium">Overview</div>
+              <div
+                className="relative cursor-pointer pl-24"
+                onClick={handleMinimapClick}
+              >
+                <div ref={minimapRef} className="w-full" />
+                {/* Viewport indicator line */}
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-blue-600 pointer-events-none z-10"
+                  style={{ left: `calc(6rem + ${viewportProgress * 100}%)` }}
+                />
+              </div>
+            </div>
+
             <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 relative">
               <div ref={timelineRef} className="mb-3 ml-24" />
               <div className="relative">
