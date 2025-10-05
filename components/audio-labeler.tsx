@@ -240,7 +240,7 @@ export default function AudioLabeler() {
           type: labelModalData.type || "label",
           start,
           end,
-          value: labelModalData.value || "label",
+          value: labelModalData.value || "",
           target: targetParty,
           channel,
           regionId: labelModalRegionId,
@@ -381,43 +381,28 @@ export default function AudioLabeler() {
                 <Button
                   onClick={togglePlay}
                   disabled={!audioFile}
-                  className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed p-3"
+                  title={playing ? "Pause" : "Play"}
                 >
                   {playing ? (
-                    <>
-                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M5 4h3v12H5V4zm7 0h3v12h-3V4z" />
-                      </svg>
-                      Pause
-                    </>
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M5 4h3v12H5V4zm7 0h3v12h-3V4z" />
+                    </svg>
                   ) : (
-                    <>
-                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                      </svg>
-                      Play
-                    </>
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                    </svg>
                   )}
-                </Button>
-                <Button
-                  onClick={() => wsRef.current?.stop()}
-                  disabled={!audioFile}
-                  className="hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M5 4h10v12H5V4z" />
-                  </svg>
-                  Stop
                 </Button>
                 <Button
                   onClick={addRegionFromSelection}
                   disabled={!audioFile}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed p-3"
+                  title="Add Region"
                 >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Add Region
                 </Button>
               </div>
 
@@ -434,12 +419,12 @@ export default function AudioLabeler() {
                 </Button>
                 <Button
                   onClick={() => fileInputRef.current?.click()}
-                  className="bg-slate-700 text-white hover:bg-slate-800 border-slate-700"
+                  className="bg-slate-700 text-white hover:bg-slate-800 border-slate-700 p-3"
+                  title="Open Audio"
                 >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
-                  Open Audio
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -518,7 +503,7 @@ export default function AudioLabeler() {
                               </span>
                             </td>
                             <td className="py-3 px-4 text-sm text-slate-900 font-medium">
-                              {a.value}
+                              {a.value || "-"}
                             </td>
                             <td className="py-3 px-4">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -720,8 +705,7 @@ export default function AudioLabeler() {
               )}
               <Button
                 onClick={saveLabelModal}
-                disabled={!labelModalData.value}
-                className="flex-1 bg-blue-600 text-white hover:bg-blue-700 border-blue-600 disabled:opacity-50"
+                className="flex-1 bg-blue-600 text-white hover:bg-blue-700 border-blue-600"
               >
                 Save Label
               </Button>
