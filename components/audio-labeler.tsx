@@ -75,6 +75,35 @@ export default function AudioLabeler() {
     target: "left" | "right" | "both";
   }>({ type: "sentiment", value: "", target: "left" });
 
+  // Helper function to update viewport indicator position
+  const updateViewportIndicator = (ws: WaveSurfer, minimapWs: WaveSurfer) => {
+    if (!ws || !minimapWs) return;
+
+    const duration = ws.getDuration();
+    if (!duration) return;
+
+    // Get the scroll position - this represents the left edge of the viewport
+    const wrapper = ws.getWrapper();
+    const scrollContainer = wrapper.querySelector('.scroll') as HTMLElement;
+    if (!scrollContainer) {
+      // Fallback to current time if scroll container not found
+      const currentTime = ws.getCurrentTime();
+      const progress = currentTime / duration;
+      setViewportProgress(progress);
+      return;
+    }
+
+    const scrollLeft = scrollContainer.scrollLeft;
+    const scrollWidth = scrollContainer.scrollWidth;
+    const clientWidth = scrollContainer.clientWidth;
+
+    // Calculate what portion of the audio is at the left edge of the viewport
+    // Need to account for the fact that scrollWidth = contentWidth, but max scroll = scrollWidth - clientWidth
+    const maxScroll = scrollWidth - clientWidth;
+    const progress = maxScroll > 0 ? scrollLeft / maxScroll : 0;
+    setViewportProgress(progress);
+  };
+
   // Init WaveSurfer
   useEffect(() => {
     if (!containerRef.current || !timelineRef.current || !minimapRef.current) return;
@@ -230,35 +259,6 @@ export default function AudioLabeler() {
       ws.zoom(zoomPxPerSec);
     }
   }, [zoomPxPerSec, audioFile, duration]);
-
-  // Helper function to update viewport indicator position
-  const updateViewportIndicator = (ws: WaveSurfer, minimapWs: WaveSurfer) => {
-    if (!ws || !minimapWs) return;
-
-    const duration = ws.getDuration();
-    if (!duration) return;
-
-    // Get the scroll position - this represents the left edge of the viewport
-    const wrapper = ws.getWrapper();
-    const scrollContainer = wrapper.querySelector('.scroll') as HTMLElement;
-    if (!scrollContainer) {
-      // Fallback to current time if scroll container not found
-      const currentTime = ws.getCurrentTime();
-      const progress = currentTime / duration;
-      setViewportProgress(progress);
-      return;
-    }
-
-    const scrollLeft = scrollContainer.scrollLeft;
-    const scrollWidth = scrollContainer.scrollWidth;
-    const clientWidth = scrollContainer.clientWidth;
-
-    // Calculate what portion of the audio is at the left edge of the viewport
-    // Need to account for the fact that scrollWidth = contentWidth, but max scroll = scrollWidth - clientWidth
-    const maxScroll = scrollWidth - clientWidth;
-    const progress = maxScroll > 0 ? scrollLeft / maxScroll : 0;
-    setViewportProgress(progress);
-  };
 
   // Reload audio when file chosen
   useEffect(() => {
@@ -677,7 +677,11 @@ export default function AudioLabeler() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {anns.map((a) => (
+                        {[...anns].sort((a, b) => {
+                          // Sort by start time first, then by end time
+                          if (a.start !== b.start) return a.start - b.start;
+                          return a.end - b.end;
+                        }).map((a) => (
                           <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                             <td className="py-3 px-4 text-sm text-slate-900">
                               {a.start.toFixed(3)}s
