@@ -218,8 +218,25 @@ export default function AudioLabeler() {
     const duration = ws.getDuration();
     if (!duration) return;
 
-    const currentTime = ws.getCurrentTime();
-    const progress = currentTime / duration;
+    // Get the scroll position - this represents the left edge of the viewport
+    const wrapper = ws.getWrapper();
+    const scrollContainer = wrapper.querySelector('.scroll') as HTMLElement;
+    if (!scrollContainer) {
+      // Fallback to current time if scroll container not found
+      const currentTime = ws.getCurrentTime();
+      const progress = currentTime / duration;
+      setViewportProgress(progress);
+      return;
+    }
+
+    const scrollLeft = scrollContainer.scrollLeft;
+    const scrollWidth = scrollContainer.scrollWidth;
+    const clientWidth = scrollContainer.clientWidth;
+
+    // Calculate what portion of the audio is at the left edge of the viewport
+    // Need to account for the fact that scrollWidth = contentWidth, but max scroll = scrollWidth - clientWidth
+    const maxScroll = scrollWidth - clientWidth;
+    const progress = maxScroll > 0 ? scrollLeft / maxScroll : 0;
     setViewportProgress(progress);
   };
 
@@ -244,16 +261,25 @@ export default function AudioLabeler() {
   const handleMinimapClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const minimapWs = minimapWsRef.current;
     const ws = wsRef.current;
-    if (!minimapWs || !ws) return;
+    if (!minimapWs || !ws || !minimapRef.current) return;
 
-    const bounds = e.currentTarget.getBoundingClientRect();
+    // Get bounds of the actual minimap waveform container
+    const bounds = minimapRef.current.getBoundingClientRect();
     const x = e.clientX - bounds.left;
     const width = bounds.width;
-    const progress = x / width;
+    const progress = Math.max(0, Math.min(1, x / width));
+    // Scroll the viewport to this position
+    const wrapper = ws.getWrapper();
+    const scrollContainer = wrapper?.querySelector('.scroll') as HTMLElement; 
+    if (scrollContainer) {
+      const scrollWidth = scrollContainer.scrollWidth;
+      const clientWidth = scrollContainer.clientWidth;
+      const maxScroll = scrollWidth - clientWidth;
+      const targetScrollLeft = progress * maxScroll;
+      scrollContainer.scrollLeft = targetScrollLeft;
+    }
 
-    const duration = ws.getDuration();
-    const seekTime = progress * duration;
-
+    // Also seek to this position in the audio
     ws.seekTo(progress);
     setViewportProgress(progress);
   };
@@ -464,15 +490,18 @@ export default function AudioLabeler() {
             <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 mb-4 relative">
               <div className="text-xs text-slate-500 mb-2 font-medium">Overview</div>
               <div
-                className="relative cursor-pointer pl-24"
+                className="relative cursor-pointer"
                 onClick={handleMinimapClick}
               >
-                <div ref={minimapRef} className="w-full" />
-                {/* Viewport indicator line */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-blue-600 pointer-events-none z-10"
-                  style={{ left: `calc(6rem + ${viewportProgress * 100}%)` }}
-                />
+                <div className="pl-24">
+                  <div ref={minimapRef} className="w-full relative">
+                    {/* Viewport indicator line */}
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-blue-600 pointer-events-none z-10"
+                      style={{ left: `${viewportProgress * 100}%` }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
