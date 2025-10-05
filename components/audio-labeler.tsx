@@ -123,7 +123,16 @@ export default function AudioLabeler() {
     });
 
     ws.on("ready", () => {
-      setDuration(ws.getDuration());
+      const duration = ws.getDuration();
+      setDuration(duration);
+
+      // Adjust minimap zoom to fit entire waveform
+      if (minimapRef.current && duration > 0) {
+        const containerWidth = minimapRef.current.clientWidth;
+        // Calculate pixels per second to fit entire audio in container width
+        const pixelsPerSec = Math.max(1, containerWidth / duration);
+        minimapWs.zoom(pixelsPerSec);
+      }
     });
 
     ws.on("play", () => setPlaying(true));
