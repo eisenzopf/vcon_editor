@@ -32,6 +32,7 @@ export default function AudioLabeler() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const minimapRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const minimapTimelineRef = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
   const minimapWsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<any>(null);
@@ -106,7 +107,7 @@ export default function AudioLabeler() {
 
   // Init WaveSurfer
   useEffect(() => {
-    if (!containerRef.current || !timelineRef.current || !minimapRef.current) return;
+    if (!containerRef.current || !timelineRef.current || !minimapRef.current || !minimapTimelineRef.current) return;
 
     const regions = RegionsPlugin.create();
 
@@ -149,6 +150,14 @@ export default function AudioLabeler() {
       barWidth: 2,
       barRadius: 1,
       interact: false, // Disable normal interactions
+      plugins: [
+        TimelinePlugin.create({
+          container: minimapTimelineRef.current,
+          height: 15,
+          timeInterval: 60, // Show markers every 1 minute
+          primaryLabelInterval: 60, // Larger labels every 1 minute
+        }),
+      ],
     });
 
     ws.on("ready", () => {
@@ -514,6 +523,7 @@ export default function AudioLabeler() {
                 onClick={handleMinimapClick}
               >
                 <div className="pl-24">
+                  <div ref={minimapTimelineRef} className="w-full mb-1" />
                   <div ref={minimapRef} className="w-full relative">
                     {/* Viewport indicator line */}
                     <div
@@ -631,15 +641,6 @@ export default function AudioLabeler() {
               <h2 className="text-lg font-semibold text-slate-900">
                 Labels ({anns.length})
               </h2>
-                {anns.length > 0 && (
-                  <Button
-                    onClick={clearAll}
-                    variant="destructive"
-                    className="text-xs"
-                  >
-                    Clear All
-                  </Button>
-                )}
             </div>
             <div className="border border-slate-200 rounded-lg overflow-hidden">
                 {anns.length === 0 ? (
