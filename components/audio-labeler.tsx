@@ -25,6 +25,7 @@ type Ann = {
   value: string;
   target?: string;
   channel?: number;
+  regionId?: string;
 };
 
 export default function AudioLabeler() {
@@ -75,9 +76,7 @@ export default function AudioLabeler() {
   useEffect(() => {
     if (!containerRef.current || !timelineRef.current) return;
 
-    const regions = RegionsPlugin.create({
-      dragSelection: true,
-    });
+    const regions = RegionsPlugin.create();
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
@@ -86,7 +85,10 @@ export default function AudioLabeler() {
       cursorColor: "#1f2937",
       height: 180,
       minPxPerSec: zoomPxPerSec,
-      splitChannels: true,
+      splitChannels: [
+        { overlay: false },
+        { overlay: false }
+      ],
       barGap: 2,
       barWidth: 3,
       barRadius: 2,
@@ -384,9 +386,21 @@ export default function AudioLabeler() {
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
               Audio Waveform
             </h2>
-            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-              <div ref={timelineRef} className="mb-3" />
-              <div ref={containerRef} className="w-full" />
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 relative">
+              <div ref={timelineRef} className="mb-3 ml-24" />
+              <div className="relative">
+                <div className="absolute left-0 top-0 bottom-0 w-20 flex flex-col justify-around py-2">
+                  <div className="text-xs text-right pr-3">
+                    <div className="font-medium text-slate-700">{partyL.name || "Left"}</div>
+                    <div className="text-[10px] text-slate-400">{partyL.role}</div>
+                  </div>
+                  <div className="text-xs text-right pr-3">
+                    <div className="font-medium text-slate-700">{partyR.name || "Right"}</div>
+                    <div className="text-[10px] text-slate-400">{partyR.role}</div>
+                  </div>
+                </div>
+                <div ref={containerRef} className="w-full pl-24" />
+              </div>
             </div>
 
             {/* Player Controls */}
