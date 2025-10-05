@@ -87,7 +87,7 @@ export default function AudioLabeler() {
       progressColor: "#3b82f6",
       cursorColor: "#1f2937",
       height: 180,
-      minPxPerSec: zoomPxPerSec,
+      minPxPerSec: 100, // Initial zoom level
       splitChannels: [
         { overlay: false },
         { overlay: false }
@@ -125,8 +125,11 @@ export default function AudioLabeler() {
     ws.on("ready", () => {
       const duration = ws.getDuration();
       setDuration(duration);
+    });
 
-      // Adjust minimap zoom to fit entire waveform
+    // Adjust minimap zoom to fit entire waveform when minimap is ready
+    minimapWs.on("ready", () => {
+      const duration = minimapWs.getDuration();
       if (minimapRef.current && duration > 0) {
         const containerWidth = minimapRef.current.clientWidth;
         // Calculate pixels per second to fit entire audio in container width
@@ -218,7 +221,15 @@ export default function AudioLabeler() {
       minimapWsRef.current = null;
       regionsRef.current = null;
     };
-  }, [zoomPxPerSec]);
+  }, []); // Remove zoomPxPerSec from dependencies
+
+  // Handle zoom changes without recreating WaveSurfer
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (ws && audioFile && duration > 0) {
+      ws.zoom(zoomPxPerSec);
+    }
+  }, [zoomPxPerSec, audioFile, duration]);
 
   // Helper function to update viewport indicator position
   const updateViewportIndicator = (ws: WaveSurfer, minimapWs: WaveSurfer) => {
@@ -562,7 +573,28 @@ export default function AudioLabeler() {
                 </Button>
               </div>
 
-              <div className="ml-auto flex gap-2">
+              <div className="ml-auto flex items-center gap-3">
+                {/* Zoom Control */}
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                  </svg>
+                  <input
+                    type="range"
+                    min="50"
+                    max="500"
+                    step="10"
+                    value={zoomPxPerSec}
+                    onChange={(e) => setZoomPxPerSec(Number(e.target.value))}
+                    disabled={!audioFile}
+                    className="w-32 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Zoom"
+                  />
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                  </svg>
+                </div>
+
                 <Button
                   onClick={() => setShowSettings(true)}
                   className="hover:bg-slate-100"
