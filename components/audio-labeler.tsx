@@ -692,6 +692,13 @@ export default function AudioLabeler() {
     });
   };
 
+  const seekToLabel = (startTime: number) => {
+    const ws = wsRef.current;
+    if (!ws) return;
+
+    ws.setTime(startTime);
+  };
+
   const clearAll = () => {
     regionsRef.current?.getRegions().forEach((r: any) => r.remove());
     setAnns([]);
@@ -1044,7 +1051,12 @@ export default function AudioLabeler() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {getDisplayAnnotations().map((a) => (
-                          <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                          <tr
+                            key={a.id}
+                            className="hover:bg-slate-50 transition-colors cursor-pointer"
+                            onClick={() => seekToLabel(a.start)}
+                            title="Click to seek to this label"
+                          >
                             <td className="py-3 px-4 text-sm text-slate-900">
                               {a.start.toFixed(3)}s
                             </td>
@@ -1077,7 +1089,8 @@ export default function AudioLabeler() {
                             </td>
                             <td className="py-3 px-4">
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   // Delete all annotations associated with this display entry
                                   a.annIds.forEach(id => deleteAnnotation(id));
                                 }}
