@@ -37,6 +37,8 @@ export default function AudioLabeler() {
   const minimapWsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<any>(null);
   const timelinePluginRef = useRef<any>(null);
+  const loopRegionRef = useRef<boolean>(false);
+  const playingRef = useRef<boolean>(false);
 
   // Generate timeline markers based on visible range
   const generateTimelineMarkers = () => {
@@ -83,6 +85,7 @@ export default function AudioLabeler() {
   const [playing, setPlaying] = useState<boolean>(false);
   const [viewportProgress, setViewportProgress] = useState<number>(0);
   const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+  const [loopRegion, setLoopRegion] = useState<boolean>(false);
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -214,8 +217,15 @@ export default function AudioLabeler() {
       }
     });
 
-    ws.on("play", () => setPlaying(true));
-    ws.on("pause", () => setPlaying(false));
+    ws.on("play", () => {
+      setPlaying(true);
+      playingRef.current = true;
+    });
+
+    ws.on("pause", () => {
+      setPlaying(false);
+      playingRef.current = false;
+    });
 
     // Update viewport indicator when scrolling/seeking in main view
     ws.on("scroll", (visibleStartTime: number, visibleEndTime: number) => {
@@ -225,6 +235,22 @@ export default function AudioLabeler() {
 
     ws.on("timeupdate", () => {
       updateViewportIndicator(ws, minimapWs);
+
+      // Handle region looping
+      if (loopRegionRef.current && playingRef.current && regions) {
+        const currentTime = ws.getCurrentTime();
+        const allRegions = regions.getRegions();
+
+        // Find region that contains current time
+        const currentRegion = allRegions.find((r: any) =>
+          currentTime >= r.start && currentTime <= r.end
+        );
+
+        // If we found a region and we've reached or passed its end, loop back
+        if (currentRegion && currentTime >= currentRegion.end - 0.1) {
+          ws.setTime(currentRegion.start);
+        }
+      }
     });
 
     ws.on("zoom", (minPxPerSec: number) => {
@@ -637,7 +663,7 @@ export default function AudioLabeler() {
 
             {/* Player Controls */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <Button
                   onClick={togglePlay}
                   disabled={!audioFile}
@@ -654,6 +680,18 @@ export default function AudioLabeler() {
                     </svg>
                   )}
                 </Button>
+                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={loopRegion}
+                    onChange={(e) => {
+                      setLoopRegion(e.target.checked);
+                      loopRegionRef.current = e.target.checked;
+                    }}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  <span>Loop Region</span>
+                </label>
                 <Button
                   onClick={addRegionFromSelection}
                   disabled={!audioFile}
