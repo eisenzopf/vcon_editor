@@ -78,6 +78,75 @@ export default function AudioLabeler() {
     return `${secs}.${ms}s`;
   };
 
+  // Group annotations to show "Both" when there are matching annotations for both channels
+  const getDisplayAnnotations = () => {
+    const sorted = [...anns].sort((a, b) => {
+      // Sort by start time first, then by end time
+      if (a.start !== b.start) return a.start - b.start;
+      return a.end - b.end;
+    });
+
+    const grouped: Array<{
+      id: string;
+      start: number;
+      end: number;
+      type: string;
+      value: string;
+      channel: "left" | "right" | "both";
+      target: string | undefined;
+      annIds: string[];
+    }> = [];
+
+    const processed = new Set<string>();
+
+    sorted.forEach((ann) => {
+      if (processed.has(ann.id)) return;
+
+      // Look for a matching annotation with the same start, end, type, value but different channel
+      const match = sorted.find(
+        (other) =>
+          other.id !== ann.id &&
+          !processed.has(other.id) &&
+          other.start === ann.start &&
+          other.end === ann.end &&
+          other.type === ann.type &&
+          other.value === ann.value &&
+          other.channel !== ann.channel
+      );
+
+      if (match) {
+        // Found a match - create a "both" entry
+        grouped.push({
+          id: ann.id, // Use first ID for key
+          start: ann.start,
+          end: ann.end,
+          type: ann.type,
+          value: ann.value,
+          channel: "both",
+          target: undefined,
+          annIds: [ann.id, match.id],
+        });
+        processed.add(ann.id);
+        processed.add(match.id);
+      } else {
+        // No match - create individual entry
+        grouped.push({
+          id: ann.id,
+          start: ann.start,
+          end: ann.end,
+          type: ann.type,
+          value: ann.value,
+          channel: ann.channel === 0 ? "left" : "right",
+          target: ann.target,
+          annIds: [ann.id],
+        });
+        processed.add(ann.id);
+      }
+    });
+
+    return grouped;
+  };
+
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [rate, setRate] = useState<number>(1);
@@ -809,7 +878,7 @@ export default function AudioLabeler() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-slate-900">
-                Labels ({anns.length})
+                Labels ({getDisplayAnnotations().length})
               </h2>
             </div>
             <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -848,11 +917,7 @@ export default function AudioLabeler() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {[...anns].sort((a, b) => {
-                          // Sort by start time first, then by end time
-                          if (a.start !== b.start) return a.start - b.start;
-                          return a.end - b.end;
-                        }).map((a) => (
+                        {getDisplayAnnotations().map((a) => (
                           <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                             <td className="py-3 px-4 text-sm text-slate-900">
                               {a.start.toFixed(3)}s
@@ -870,19 +935,26 @@ export default function AudioLabeler() {
                             </td>
                             <td className="py-3 px-4">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                a.channel === 0
+                                a.channel === "left"
                                   ? "bg-purple-100 text-purple-800"
-                                  : "bg-amber-100 text-amber-800"
+                                  : a.channel === "right"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-teal-100 text-teal-800"
                               }`}>
-                                {a.channel === 0 ? "Left" : "Right"}
+                                {a.channel === "left" ? "Left" : a.channel === "right" ? "Right" : "Both"}
                               </span>
                             </td>
                             <td className="py-3 px-4 text-sm text-slate-600">
-                              {a.target === partyL.id ? partyL.name : partyR.name}
+                              {a.channel === "both"
+                                ? "Both"
+                                : a.target === partyL.id ? partyL.name : partyR.name}
                             </td>
                             <td className="py-3 px-4">
                               <button
-                                onClick={() => deleteAnnotation(a.id)}
+                                onClick={() => {
+                                  // Delete all annotations associated with this display entry
+                                  a.annIds.forEach(id => deleteAnnotation(id));
+                                }}
                                 className="text-red-600 hover:text-red-800 transition-colors"
                                 title="Delete label"
                               >
