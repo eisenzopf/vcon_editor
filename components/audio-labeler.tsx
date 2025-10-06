@@ -162,6 +162,7 @@ export default function AudioLabeler() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [vconFileHandle, setVconFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
+  const [pendingVconData, setPendingVconData] = useState<any>(null);
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -749,66 +750,8 @@ export default function AudioLabeler() {
         const content = await vconFile.text();
         const vconData = JSON.parse(content);
 
-        // Load annotations from vcon file
-        if (vconData.analysis && Array.isArray(vconData.analysis)) {
-          setAnns(vconData.analysis.map((a: any) => ({
-            id: a.id || uuidv4(),
-            type: a.type,
-            start: a.start,
-            end: a.end,
-            value: a.value,
-            target: a.target,
-            channel: a.channel,
-            regionId: undefined, // Will be set when region is created
-          })));
-
-          // Recreate regions from annotations
-          const regions = regionsRef.current;
-          if (regions) {
-            // Group annotations by start/end to create regions
-            const regionMap = new Map<string, any[]>();
-            vconData.analysis.forEach((a: any) => {
-              const key = `${a.start}-${a.end}`;
-              if (!regionMap.has(key)) {
-                regionMap.set(key, []);
-              }
-              regionMap.get(key)!.push(a);
-            });
-
-            // Create regions
-            regionMap.forEach((anns, key) => {
-              const [start, end] = key.split('-').map(Number);
-              const region = regions.addRegion({
-                start,
-                end,
-                drag: true,
-                resize: true,
-                color: "rgba(59,130,246,0.2)",
-              });
-
-              // Update annotations with regionId
-              setAnns(currentAnns => currentAnns.map(ann => {
-                const matchingAnn = anns.find((a: any) =>
-                  a.start === ann.start && a.end === ann.end && a.type === ann.type && a.value === ann.value
-                );
-                if (matchingAnn) {
-                  return { ...ann, regionId: region.id };
-                }
-                return ann;
-              }));
-            });
-          }
-        }
-
-        // Load party information if available
-        if (vconData.parties && Array.isArray(vconData.parties)) {
-          if (vconData.parties[0]) {
-            setPartyL(vconData.parties[0]);
-          }
-          if (vconData.parties[1]) {
-            setPartyR(vconData.parties[1]);
-          }
-        }
+        // Store vcon data to be processed after waveform is ready
+        setPendingVconData(vconData);
 
         console.log('Loaded .vcon file:', vconFileName);
       } catch (err) {
@@ -832,6 +775,8 @@ export default function AudioLabeler() {
         const writable = await vconHandle.createWritable();
         await writable.write(JSON.stringify(initialVcon, null, 2));
         await writable.close();
+
+        setPendingVconData(null);
       }
 
       setVconFileHandle(vconHandle);
@@ -900,6 +845,79 @@ export default function AudioLabeler() {
       console.error('Failed to save .vcon file:', err);
     }
   };
+
+  // Process pending vcon data after waveform is ready
+  useEffect(() => {
+    if (!pendingVconData || !regionsRef.current || !wsRef.current || duration === 0) return;
+
+    const vconData = pendingVconData;
+
+    // Load annotations from vcon file
+    if (vconData.analysis && Array.isArray(vconData.analysis)) {
+      const loadedAnns = vconData.analysis.map((a: any) => ({
+        id: a.id || uuidv4(),
+        type: a.type,
+        start: a.start,
+        end: a.end,
+        value: a.value,
+        target: a.target,
+        channel: a.channel,
+        regionId: undefined, // Will be set when region is created
+      }));
+
+      // Recreate regions from annotations
+      const regions = regionsRef.current;
+
+      // Group annotations by start/end to create regions
+      const regionMap = new Map<string, any[]>();
+      vconData.analysis.forEach((a: any) => {
+        const key = `${a.start}-${a.end}`;
+        if (!regionMap.has(key)) {
+          regionMap.set(key, []);
+        }
+        regionMap.get(key)!.push(a);
+      });
+
+      // Create regions and update annotations with regionIds
+      const updatedAnns = [...loadedAnns];
+      regionMap.forEach((regionAnns, key) => {
+        const [start, end] = key.split('-').map(Number);
+        const region = regions.addRegion({
+          start,
+          end,
+          drag: true,
+          resize: true,
+          color: "rgba(59,130,246,0.2)",
+        });
+
+        // Update annotations with regionId
+        updatedAnns.forEach((ann, index) => {
+          const matchingAnn = regionAnns.find((a: any) =>
+            a.start === ann.start && a.end === ann.end && a.type === ann.type && a.value === ann.value
+          );
+          if (matchingAnn) {
+            updatedAnns[index] = { ...ann, regionId: region.id };
+          }
+        });
+      });
+
+      setAnns(updatedAnns);
+      console.log('Recreated regions from .vcon file');
+    }
+
+    // Load party information if available
+    if (vconData.parties && Array.isArray(vconData.parties)) {
+      if (vconData.parties[0]) {
+        setPartyL(vconData.parties[0]);
+      }
+      if (vconData.parties[1]) {
+        setPartyR(vconData.parties[1]);
+      }
+    }
+
+    // Clear pending data
+    setPendingVconData(null);
+  }, [pendingVconData, duration]);
 
   // Auto-save whenever annotations, parties, or duration changes
   useEffect(() => {

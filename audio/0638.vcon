@@ -1,16 +1,16 @@
 {
   "vcon": "0.9.0",
-  "uuid": "3244dde0-386e-48dc-a235-686587e43452",
+  "uuid": "82ea0565-864d-4d7f-a83a-1b4fe2e4d2ca",
   "parties": [
     {
       "id": "party-1",
-      "role": "agent",
-      "name": "Agent"
+      "role": "unknown",
+      "name": "Speaker1"
     },
     {
       "id": "party-2",
-      "role": "customer",
-      "name": "Customer"
+      "role": "unknown",
+      "name": "Speaker2"
     }
   ],
   "media": [
@@ -23,16 +23,7 @@
   ],
   "analysis": [
     {
-      "id": "f02e4037-7cb6-430b-8fbf-e7f56e4a8f50",
-      "type": "sentiment",
-      "start": 2.09,
-      "end": 3.616,
-      "value": "",
-      "target": "party-1",
-      "channel": 0
-    },
-    {
-      "id": "b63d5a10-a56c-423e-b543-968e71d573c7",
+      "id": "31746b48-39c8-477f-a5b5-d9a1237f9184",
       "type": "sentiment",
       "start": 4.64,
       "end": 6.174,
@@ -41,26 +32,53 @@
       "channel": 0
     },
     {
-      "id": "69a9d2f4-5e85-487e-ae2e-b7fc087f1b9d",
+      "id": "ef2c1988-d87d-4602-8d8c-b3e5b4210291",
       "type": "sentiment",
-      "start": 591.154,
-      "end": 591.765,
+      "start": 2.09,
+      "end": 3.616,
       "value": "",
       "target": "party-1",
       "channel": 0
     },
     {
-      "id": "e8d8b2c7-d473-4572-aed7-04d11fdfe1da",
+      "id": "262dbdba-3eee-4457-9652-a16cb0d9db68",
       "type": "sentiment",
-      "start": 591.154,
-      "end": 591.765,
+      "start": 593.114,
+      "end": 595.434,
+      "value": "",
+      "target": "party-1",
+      "channel": 0
+    },
+    {
+      "id": "30e7368e-0b0d-4b24-8ba1-e14933ab2a99",
+      "type": "sentiment",
+      "start": 795.663,
+      "end": 797.663,
+      "value": "",
+      "target": "party-1",
+      "channel": 0
+    },
+    {
+      "id": "2fbd568e-aa03-410c-8479-c7aad3eac5be",
+      "type": "sentiment",
+      "start": 795.663,
+      "end": 797.663,
+      "value": "",
+      "target": "party-2",
+      "channel": 1
+    },
+    {
+      "id": "eabee528-6363-4ca9-9153-1839547decbf",
+      "type": "sentiment",
+      "start": 573.132,
+      "end": 575.132,
       "value": "",
       "target": "party-2",
       "channel": 1
     }
   ],
   "metadata": {
-    "created_at": "2025-10-06T04:19:11.043Z",
+    "created_at": "2025-10-06T19:07:50.959Z",
     "generator": "VConAudioLabeler"
   }
 }
