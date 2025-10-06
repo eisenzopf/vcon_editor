@@ -217,14 +217,55 @@ export default function AudioLabeler() {
       }
     });
 
+    // Track which region we're looping (determined when play starts)
+    let loopingRegion: any = null;
+
     ws.on("play", () => {
       setPlaying(true);
       playingRef.current = true;
+
+      // Determine which region to loop based on playhead position when play starts
+      if (loopRegionRef.current && regions) {
+        const currentTime = ws.getCurrentTime();
+        const allRegions = regions.getRegions();
+
+        // Find all regions that contain current playhead position
+        const containingRegions = allRegions.filter((r: any) =>
+          currentTime >= r.start && currentTime <= r.end
+        );
+
+        if (containingRegions.length > 0) {
+          // Determine which region to loop based on nesting/overlap
+          loopingRegion = containingRegions.reduce((selected: any, current: any) => {
+            // Check if current is fully nested inside selected
+            const currentFullyInSelected = current.start >= selected.start && current.end <= selected.end;
+            // Check if selected is fully nested inside current
+            const selectedFullyInCurrent = selected.start >= current.start && selected.end <= current.end;
+
+            if (currentFullyInSelected && !selectedFullyInCurrent) {
+              // Current is nested inside selected, pick the smaller (current)
+              return current;
+            } else if (selectedFullyInCurrent && !currentFullyInSelected) {
+              // Selected is nested inside current, keep the smaller (selected)
+              return selected;
+            } else if (!currentFullyInSelected && !selectedFullyInCurrent) {
+              // Overlapping (not nested), pick the one that starts later
+              return current.start > selected.start ? current : selected;
+            } else {
+              // Both fully nested in each other (same region), pick smaller
+              const selectedDuration = selected.end - selected.start;
+              const currentDuration = current.end - current.start;
+              return currentDuration < selectedDuration ? current : selected;
+            }
+          });
+        }
+      }
     });
 
     ws.on("pause", () => {
       setPlaying(false);
       playingRef.current = false;
+      loopingRegion = null; // Reset looping region when paused
     });
 
     // Update viewport indicator when scrolling/seeking in main view
@@ -237,18 +278,12 @@ export default function AudioLabeler() {
       updateViewportIndicator(ws, minimapWs);
 
       // Handle region looping
-      if (loopRegionRef.current && playingRef.current && regions) {
+      if (loopRegionRef.current && playingRef.current && loopingRegion) {
         const currentTime = ws.getCurrentTime();
-        const allRegions = regions.getRegions();
 
-        // Find region that contains current time
-        const currentRegion = allRegions.find((r: any) =>
-          currentTime >= r.start && currentTime <= r.end
-        );
-
-        // If we found a region and we've reached or passed its end, loop back
-        if (currentRegion && currentTime >= currentRegion.end - 0.1) {
-          ws.setTime(currentRegion.start);
+        // If we've reached or passed the end of the looping region, loop back
+        if (currentTime >= loopingRegion.end - 0.1) {
+          ws.setTime(loopingRegion.start);
         }
       }
     });
