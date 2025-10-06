@@ -160,6 +160,8 @@ export default function AudioLabeler() {
   const [wavFiles, setWavFiles] = useState<FileSystemFileHandle[]>([]);
   const [selectedFileHandle, setSelectedFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [vconFileHandle, setVconFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -730,6 +732,114 @@ export default function AudioLabeler() {
     }
   };
 
+  const loadVconFile = async (audioFileName: string) => {
+    if (!directoryHandle) return;
+
+    try {
+      // Get the base name without extension
+      const baseName = audioFileName.replace(/\.[^.]+$/, '');
+      const vconFileName = `${baseName}.vcon`;
+
+      let vconHandle: FileSystemFileHandle;
+
+      try {
+        // Try to get existing .vcon file
+        vconHandle = await directoryHandle.getFileHandle(vconFileName);
+        const vconFile = await vconHandle.getFile();
+        const content = await vconFile.text();
+        const vconData = JSON.parse(content);
+
+        // Load annotations from vcon file
+        if (vconData.analysis && Array.isArray(vconData.analysis)) {
+          setAnns(vconData.analysis.map((a: any) => ({
+            id: a.id || uuidv4(),
+            type: a.type,
+            start: a.start,
+            end: a.end,
+            value: a.value,
+            target: a.target,
+            channel: a.channel,
+            regionId: undefined, // Will be set when region is created
+          })));
+
+          // Recreate regions from annotations
+          const regions = regionsRef.current;
+          if (regions) {
+            // Group annotations by start/end to create regions
+            const regionMap = new Map<string, any[]>();
+            vconData.analysis.forEach((a: any) => {
+              const key = `${a.start}-${a.end}`;
+              if (!regionMap.has(key)) {
+                regionMap.set(key, []);
+              }
+              regionMap.get(key)!.push(a);
+            });
+
+            // Create regions
+            regionMap.forEach((anns, key) => {
+              const [start, end] = key.split('-').map(Number);
+              const region = regions.addRegion({
+                start,
+                end,
+                drag: true,
+                resize: true,
+                color: "rgba(59,130,246,0.2)",
+              });
+
+              // Update annotations with regionId
+              setAnns(currentAnns => currentAnns.map(ann => {
+                const matchingAnn = anns.find((a: any) =>
+                  a.start === ann.start && a.end === ann.end && a.type === ann.type && a.value === ann.value
+                );
+                if (matchingAnn) {
+                  return { ...ann, regionId: region.id };
+                }
+                return ann;
+              }));
+            });
+          }
+        }
+
+        // Load party information if available
+        if (vconData.parties && Array.isArray(vconData.parties)) {
+          if (vconData.parties[0]) {
+            setPartyL(vconData.parties[0]);
+          }
+          if (vconData.parties[1]) {
+            setPartyR(vconData.parties[1]);
+          }
+        }
+
+        console.log('Loaded .vcon file:', vconFileName);
+      } catch (err) {
+        // .vcon file doesn't exist, create a new one
+        console.log('.vcon file not found, creating new one:', vconFileName);
+        vconHandle = await directoryHandle.getFileHandle(vconFileName, { create: true });
+
+        // Initialize with empty vcon structure
+        const initialVcon = {
+          vcon: "0.9.0",
+          uuid: uuidv4(),
+          parties: [partyL, partyR],
+          media: [],
+          analysis: [],
+          metadata: {
+            created_at: new Date().toISOString(),
+            generator: "VConAudioLabeler",
+          },
+        };
+
+        const writable = await vconHandle.createWritable();
+        await writable.write(JSON.stringify(initialVcon, null, 2));
+        await writable.close();
+      }
+
+      setVconFileHandle(vconHandle);
+    } catch (err) {
+      console.error('Failed to load/create .vcon file:', err);
+    }
+  };
+
   const handleFileSelection = async (fileHandle: FileSystemFileHandle) => {
     try {
       // Only load if it's a different file
@@ -741,52 +851,62 @@ export default function AudioLabeler() {
 
       // Clear existing annotations when loading a new file
       clearAll();
+
+      // Load associated .vcon file
+      await loadVconFile(file.name);
     } catch (err) {
       console.error('Failed to load file:', err);
     }
   };
 
-  const downloadVCon = () => {
-    const nowIso = new Date().toISOString();
-    const vcon = {
-      vcon: "0.9.0",
-      uuid: uuidv4(),
-      parties: [partyL, partyR],
-      media: [
-        {
-          type: audioFile ? audioFile.type || "audio/wav" : "audio",
-          uri: audioFile ? `file:${audioFile.name}` : undefined,
-          channels: 2,
-          duration,
-        },
-      ],
-      analysis: anns.map((a) => ({
-        id: a.id,
-        type: a.type,
-        start: a.start,
-        end: a.end,
-        value: a.value,
-        target: a.target,
-        channel: a.channel,
-      })),
-      metadata: {
-        created_at: nowIso,
-        generator: "VConAudioLabeler",
-      },
-    };
+  const saveVconFile = async () => {
+    if (!vconFileHandle || !autoSaveEnabled) return;
 
-    const blob = new Blob([JSON.stringify(vcon, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(audioFile?.name || "session").replace(/\.[^.]+$/, "")}-vcon.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    try {
+      const nowIso = new Date().toISOString();
+      const vcon = {
+        vcon: "0.9.0",
+        uuid: uuidv4(),
+        parties: [partyL, partyR],
+        media: [
+          {
+            type: audioFile ? audioFile.type || "audio/wav" : "audio",
+            uri: audioFile ? `file:${audioFile.name}` : undefined,
+            channels: 2,
+            duration,
+          },
+        ],
+        analysis: anns.map((a) => ({
+          id: a.id,
+          type: a.type,
+          start: a.start,
+          end: a.end,
+          value: a.value,
+          target: a.target,
+          channel: a.channel,
+        })),
+        metadata: {
+          created_at: nowIso,
+          generator: "VConAudioLabeler",
+        },
+      };
+
+      const writable = await vconFileHandle.createWritable();
+      await writable.write(JSON.stringify(vcon, null, 2));
+      await writable.close();
+
+      console.log('Auto-saved .vcon file');
+    } catch (err) {
+      console.error('Failed to save .vcon file:', err);
+    }
   };
+
+  // Auto-save whenever annotations, parties, or duration changes
+  useEffect(() => {
+    if (vconFileHandle && audioFile) {
+      saveVconFile();
+    }
+  }, [anns, partyL, partyR, duration]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden">
@@ -1111,19 +1231,6 @@ export default function AudioLabeler() {
             </div>
           </div>
 
-          {/* Export */}
-          <div className="flex justify-end">
-            <Button
-              onClick={downloadVCon}
-              className="bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-600 text-base px-6 py-3"
-              disabled={anns.length === 0}
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export VCon JSON
-            </Button>
-          </div>
           </div>
         </div>
       </div>
