@@ -39,6 +39,7 @@ export default function AudioLabeler() {
   const timelinePluginRef = useRef<any>(null);
   const loopRegionRef = useRef<boolean>(false);
   const playingRef = useRef<boolean>(false);
+  const currentAudioUrlRef = useRef<string | null>(null);
 
   // Generate timeline markers based on visible range
   const generateTimelineMarkers = () => {
@@ -155,6 +156,10 @@ export default function AudioLabeler() {
   const [viewportProgress, setViewportProgress] = useState<number>(0);
   const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [loopRegion, setLoopRegion] = useState<boolean>(false);
+  const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [wavFiles, setWavFiles] = useState<FileSystemFileHandle[]>([]);
+  const [selectedFileHandle, setSelectedFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -177,7 +182,6 @@ export default function AudioLabeler() {
 
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Label modal state
   const [showLabelModal, setShowLabelModal] = useState(false);
@@ -460,7 +464,20 @@ export default function AudioLabeler() {
     const minimapWs = minimapWsRef.current;
     if (!ws || !audioFile) return;
 
+    // Create a unique identifier for this audio file
+    const fileId = `${audioFile.name}-${audioFile.size}-${audioFile.lastModified}`;
+
+    // Only load if it's a different file than what's currently loaded
+    if (currentAudioUrlRef.current === fileId) return;
+
+    // Clean up old URL if it exists
+    if (currentAudioUrlRef.current) {
+      // The old blob URL will be cleaned up by the cleanup function
+    }
+
     const url = URL.createObjectURL(audioFile);
+    currentAudioUrlRef.current = fileId;
+
     ws.load(url);
 
     // Load same audio into minimap
@@ -468,7 +485,9 @@ export default function AudioLabeler() {
       minimapWs.load(url);
     }
 
-    return () => URL.revokeObjectURL(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
   }, [audioFile]);
 
   // Handle minimap clicks to jump to position
@@ -679,6 +698,47 @@ export default function AudioLabeler() {
     setActiveRegionId(null);
   };
 
+  const handleDirectorySelection = async () => {
+    try {
+      const dirHandle = await (window as any).showDirectoryPicker();
+      console.log('Directory selected:', dirHandle);
+      setDirectoryHandle(dirHandle);
+
+      // Read all audio files from the directory
+      const audioExtensions = ['.wav', '.mp3', '.m4a', '.ogg', '.flac', '.aac'];
+      const files: FileSystemFileHandle[] = [];
+      for await (const entry of (dirHandle as any).values()) {
+        console.log('Found entry:', entry.name, entry.kind);
+        if (entry.kind === 'file') {
+          const nameLower = entry.name.toLowerCase();
+          if (audioExtensions.some(ext => nameLower.endsWith(ext))) {
+            files.push(entry);
+          }
+        }
+      }
+      console.log('Audio files found:', files.length, files.map(f => f.name));
+      setWavFiles(files);
+    } catch (err) {
+      console.error('Directory selection cancelled or failed:', err);
+    }
+  };
+
+  const handleFileSelection = async (fileHandle: FileSystemFileHandle) => {
+    try {
+      // Only load if it's a different file
+      if (selectedFileHandle === fileHandle) return;
+
+      const file = await fileHandle.getFile();
+      setSelectedFileHandle(fileHandle);
+      setAudioFile(file);
+
+      // Clear existing annotations when loading a new file
+      clearAll();
+    } catch (err) {
+      console.error('Failed to load file:', err);
+    }
+  };
+
   const downloadVCon = () => {
     const nowIso = new Date().toISOString();
     const vcon = {
@@ -722,10 +782,10 @@ export default function AudioLabeler() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto p-6 md:p-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden">
+      <div className="max-w-full px-4 py-6">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-4xl font-bold text-slate-900 mb-2">
             VCon Audio Labeler
           </h1>
@@ -734,8 +794,64 @@ export default function AudioLabeler() {
           </p>
         </div>
 
-        {/* Main Content */}
-        <div className="space-y-6">
+        {/* Main Content with Sidebar */}
+        <div className="flex gap-4 max-w-full overflow-x-hidden">
+          {/* File Browser Sidebar */}
+          {wavFiles.length > 0 && (
+            <div className={`bg-white rounded-xl shadow-sm border border-slate-200 transition-all duration-300 ${
+              sidebarCollapsed ? 'w-12' : 'w-64'
+            } flex-shrink-0 h-fit`}>
+              {sidebarCollapsed ? (
+                <div className="p-2">
+                  <button
+                    onClick={() => setSidebarCollapsed(false)}
+                    className="w-full p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                    title="Expand file browser"
+                  >
+                    <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Audio Files ({wavFiles.length})
+                    </h3>
+                    <button
+                      onClick={() => setSidebarCollapsed(true)}
+                      className="p-1 hover:bg-slate-100 rounded transition-colors"
+                      title="Collapse file browser"
+                    >
+                      <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="space-y-1 max-h-[600px] overflow-y-auto">
+                    {wavFiles.map((fileHandle, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleFileSelection(fileHandle)}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                          selectedFileHandle === fileHandle
+                            ? "bg-blue-100 text-blue-900 font-medium"
+                            : "hover:bg-slate-100 text-slate-700"
+                        }`}
+                        title={fileHandle.name}
+                      >
+                        <div className="truncate">{fileHandle.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0 space-y-6">
           {/* Waveform Player */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
@@ -872,21 +988,14 @@ export default function AudioLabeler() {
                   </svg>
                 </Button>
                 <Button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={handleDirectorySelection}
                   className="bg-slate-700 text-white hover:bg-slate-800 border-slate-700 p-3"
-                  title="Open Audio"
+                  title="Open Directory"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
                 </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="audio/*"
-                  onChange={(e: any) => setAudioFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
               </div>
             </div>
           </div>
@@ -1001,6 +1110,7 @@ export default function AudioLabeler() {
               </svg>
               Export VCon JSON
             </Button>
+          </div>
           </div>
         </div>
       </div>
