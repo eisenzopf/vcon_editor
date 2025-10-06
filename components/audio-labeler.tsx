@@ -653,6 +653,18 @@ export default function AudioLabeler() {
   };
 
   const deleteAnnotation = (id: string) => {
+    // Find the annotation to get its regionId
+    const ann = anns.find(a => a.id === id);
+    if (ann && ann.regionId) {
+      // Check if this is the last annotation for this region
+      const regionAnns = anns.filter(a => a.regionId === ann.regionId);
+
+      if (regionAnns.length === 1) {
+        // This is the last annotation for this region, delete the region too
+        deleteRegion(ann.regionId);
+      }
+    }
+
     setAnns((prev) => prev.filter((a) => a.id !== id));
   };
 
