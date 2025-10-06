@@ -36,6 +36,45 @@ export default function AudioLabeler() {
   const wsRef = useRef<WaveSurfer | null>(null);
   const minimapWsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<any>(null);
+  const timelinePluginRef = useRef<any>(null);
+
+  // Generate timeline markers based on visible range
+  const generateTimelineMarkers = () => {
+    const { start, end } = visibleTimeRange;
+    const duration = end - start;
+
+    if (duration <= 0) return [];
+
+    // Calculate appropriate interval based on zoom
+    let interval = 1; // seconds
+    if (duration > 60) interval = 10;
+    else if (duration > 30) interval = 5;
+    else if (duration > 10) interval = 2;
+    else interval = 1;
+
+    const markers: { time: number; position: number; label: string }[] = [];
+
+    // Start from the first interval mark after the start time
+    const firstMark = Math.ceil(start / interval) * interval;
+
+    for (let time = firstMark; time <= end; time += interval) {
+      const position = ((time - start) / duration) * 100;
+      const label = formatTime(time);
+      markers.push({ time, position, label });
+    }
+
+    return markers;
+  };
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 10);
+    if (mins > 0) {
+      return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
+    }
+    return `${secs}.${ms}s`;
+  };
 
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [duration, setDuration] = useState<number>(0);
@@ -43,6 +82,7 @@ export default function AudioLabeler() {
   const [zoomPxPerSec, setZoomPxPerSec] = useState<number>(100);
   const [playing, setPlaying] = useState<boolean>(false);
   const [viewportProgress, setViewportProgress] = useState<number>(0);
+  const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -107,7 +147,7 @@ export default function AudioLabeler() {
 
   // Init WaveSurfer
   useEffect(() => {
-    if (!containerRef.current || !timelineRef.current || !minimapRef.current || !minimapTimelineRef.current) return;
+    if (!containerRef.current || !minimapRef.current || !minimapTimelineRef.current) return;
 
     const regions = RegionsPlugin.create();
 
@@ -127,10 +167,6 @@ export default function AudioLabeler() {
       barRadius: 2,
       plugins: [
         regions,
-        TimelinePlugin.create({
-          container: timelineRef.current,
-          height: 20,
-        }),
       ],
     });
 
@@ -163,6 +199,8 @@ export default function AudioLabeler() {
     ws.on("ready", () => {
       const duration = ws.getDuration();
       setDuration(duration);
+      // Initialize visible time range
+      setVisibleTimeRange({ start: 0, end: Math.min(duration, 10) });
     });
 
     // Adjust minimap zoom to fit entire waveform when minimap is ready
@@ -180,16 +218,19 @@ export default function AudioLabeler() {
     ws.on("pause", () => setPlaying(false));
 
     // Update viewport indicator when scrolling/seeking in main view
-    ws.on("scroll", () => {
+    ws.on("scroll", (visibleStartTime: number, visibleEndTime: number) => {
       updateViewportIndicator(ws, minimapWs);
+      setVisibleTimeRange({ start: visibleStartTime, end: visibleEndTime });
     });
 
     ws.on("timeupdate", () => {
       updateViewportIndicator(ws, minimapWs);
     });
 
-    ws.on("zoom", () => {
+    ws.on("zoom", (minPxPerSec: number) => {
       updateViewportIndicator(ws, minimapWs);
+      // Zoom doesn't provide visible times, so we need to calculate or trigger a scroll event
+      // The scroll event will be fired after zoom, so timeline will update then
     });
 
     regions.on("region-created", (region: any) => {
@@ -311,6 +352,31 @@ export default function AudioLabeler() {
     // Also seek to this position in the audio
     ws.seekTo(progress);
     setViewportProgress(progress);
+  };
+
+  // Handle timeline clicks to seek to position
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const ws = wsRef.current;
+    if (!ws) return;
+
+    const { start, end } = visibleTimeRange;
+    const duration = end - start;
+
+    if (duration <= 0) return;
+
+    // Get bounds of the clicked timeline element
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - bounds.left;
+    const width = bounds.width;
+
+    // Calculate click position as ratio (0 to 1) within the visible timeline
+    const clickRatio = Math.max(0, Math.min(1, x / width));
+
+    // Calculate the time within the visible range
+    const targetTime = start + (clickRatio * duration);
+
+    // Seek to that time
+    ws.setTime(targetTime);
   };
 
   const togglePlay = () => {
@@ -536,7 +602,24 @@ export default function AudioLabeler() {
             </div>
 
             <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 relative">
-              <div ref={timelineRef} className="mb-3 ml-24" />
+              {/* Custom Timeline */}
+              <div
+                className="mb-3 ml-24 cursor-pointer relative h-5"
+                onClick={handleTimelineClick}
+              >
+                {generateTimelineMarkers().map((marker, idx) => (
+                  <div
+                    key={idx}
+                    className="absolute"
+                    style={{ left: `${marker.position}%` }}
+                  >
+                    <div className="w-px h-2 bg-slate-400" />
+                    <div className="text-[10px] text-slate-600 absolute top-2 -translate-x-1/2 whitespace-nowrap">
+                      {marker.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
               <div className="relative">
                 <div className="absolute left-0 top-0 bottom-0 w-20 flex flex-col justify-around py-2">
                   <div className="text-xs text-right pr-3">
