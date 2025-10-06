@@ -328,12 +328,26 @@ export default function AudioLabeler() {
         const existingAnns = currentAnns.filter(a => a.regionId === region.id);
 
         if (existingAnns.length > 0) {
+          // Check if we have annotations for both channels
+          const hasLeft = existingAnns.some(a => a.channel === 0);
+          const hasRight = existingAnns.some(a => a.channel === 1);
+
           // Load first annotation into modal
           const ann = existingAnns[0];
+
+          let target: "left" | "right" | "both";
+          if (hasLeft && hasRight) {
+            target = "both";
+          } else if (ann.channel === 0) {
+            target = "left";
+          } else {
+            target = "right";
+          }
+
           setLabelModalData({
             type: ann.type,
             value: ann.value,
-            target: ann.channel === 0 ? "left" : ann.channel === 1 ? "right" : "both",
+            target: target,
           });
         } else {
           // Reset to defaults for new annotation
