@@ -4,6 +4,7 @@
 .pnp.js
 .yarn/install-state.gz
 .vcon
+package-lock.json
 
 # Testing
 /coverage
@@ -57,5 +58,5 @@ logs
 # *.ogg
 # *.flac
 
-# VCon exports (optional - uncomment if you don't want to commit generated vCon files)
-# *-vcon.json
+# VCon files - auto-generated annotation files
+*.vcon

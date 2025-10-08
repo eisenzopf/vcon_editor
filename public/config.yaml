@@ -1,0 +1,17 @@
+# VCon Label Types Configuration
+# List of available label types for audio annotation
+
+labelTypes:
+  - turn
+  - trp
+  - sentiment
+  - intent
+  - topic
+  - emotion
+  - issue
+  - resolution
+  - escalation
+  - feedback
+  - question
+  - objection
+  - agreement

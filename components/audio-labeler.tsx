@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import yaml from "js-yaml";
 
 // Types
 type Party = {
@@ -163,6 +164,7 @@ export default function AudioLabeler() {
   const [vconFileHandle, setVconFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
   const [pendingVconData, setPendingVconData] = useState<any>(null);
+  const [labelTypes, setLabelTypes] = useState<string[]>(["sentiment", "intent", "topic", "emotion"]);
 
   const [partyL, setPartyL] = useState<Party>({
     id: "party-1",
@@ -194,6 +196,27 @@ export default function AudioLabeler() {
     value: string;
     target: "left" | "right" | "both";
   }>({ type: "sentiment", value: "", target: "left" });
+
+  // Load config.yaml on mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/config.yaml');
+        const text = await response.text();
+        const config = yaml.load(text) as any;
+        if (config.labelTypes && Array.isArray(config.labelTypes)) {
+          setLabelTypes(config.labelTypes);
+          // Update default type in label modal if current default doesn't exist
+          if (!config.labelTypes.includes(labelModalData.type)) {
+            setLabelModalData(prev => ({ ...prev, type: config.labelTypes[0] }));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load config.yaml, using defaults:', err);
+      }
+    };
+    loadConfig();
+  }, []);
 
   // Helper function to update viewport indicator position
   const updateViewportIndicator = (ws: WaveSurfer, minimapWs: WaveSurfer) => {
@@ -1326,12 +1349,18 @@ export default function AudioLabeler() {
             <div className="space-y-4">
               <div>
                 <Label className="text-slate-700 mb-2 block">Type</Label>
-                <Input
-                  placeholder="e.g., sentiment, intent, topic, emotion"
+                <select
                   value={labelModalData.type}
                   onChange={(e) => setLabelModalData({ ...labelModalData, type: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   autoFocus
-                />
+                >
+                  {labelTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
